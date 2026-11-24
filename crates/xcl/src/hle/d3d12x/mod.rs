@@ -33,6 +33,8 @@ mod standin;
 pub mod title_list;
 pub mod title_textures;
 pub mod vram;
+#[cfg(test)]
+mod warp_tests;
 
 use std::ffi::c_void;
 use std::sync::OnceLock;
