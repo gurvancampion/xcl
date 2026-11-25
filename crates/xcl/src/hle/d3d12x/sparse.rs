@@ -2245,7 +2245,7 @@ mod tests {
         }
     }
 
-    unsafe fn test_state_with_reserved(tiles: usize) -> (usize, State) {
+    unsafe fn test_state_with_reserved(tiles: usize) -> Option<(usize, State)> {
         use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
         use windows::Win32::Graphics::Dxgi::*;
         use windows_sys::Win32::System::Memory::MEM_RESERVE;
@@ -2253,7 +2253,7 @@ mod tests {
         let factory: IDXGIFactory4 = CreateDXGIFactory1().expect("DXGI factory");
         let mut dev: Option<ID3D12Device> = None;
         if D3D12CreateDevice(None, D3D_FEATURE_LEVEL_11_0, &mut dev).is_err() {
-            let warp: IDXGIAdapter = factory.EnumWarpAdapter().expect("WARP");
+            let warp = super::super::warp_tests::enum_warp_adapter(&factory)?;
             D3D12CreateDevice(&warp, D3D_FEATURE_LEVEL_11_0, &mut dev).expect("WARP D3D12 device");
         }
         let dev = dev.expect("D3D12 device");
@@ -2306,7 +2306,7 @@ mod tests {
             runs: None,
             scratch_runs: Vec::new(),
         };
-        (base, s)
+        Some((base, s))
     }
 
     /// `flush_parked` must keep unmapped pool tiles out of `free` (and `take_tile` must not reuse
@@ -2316,7 +2316,9 @@ mod tests {
         use windows_sys::Win32::System::Memory::MEM_RELEASE;
 
         unsafe {
-            let (base, mut s) = test_state_with_reserved(2);
+            let Some((base, mut s)) = test_state_with_reserved(2) else {
+                return;
+            };
             s.commit_range(base, TILE);
             let tile = s.mapped[&base].pool;
             s.wait_for(s.value);
@@ -2352,7 +2354,9 @@ mod tests {
         use windows_sys::Win32::System::Memory::MEM_RELEASE;
 
         unsafe {
-            let (base, mut s) = test_state_with_reserved(2);
+            let Some((base, mut s)) = test_state_with_reserved(2) else {
+                return;
+            };
             let title_q: ID3D12CommandQueue = s.dev.CreateCommandQueue(&D3D12_COMMAND_QUEUE_DESC::default()).expect("title queue");
             assert!(s.note_queue(&title_q));
 
