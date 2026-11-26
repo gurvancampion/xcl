@@ -26,6 +26,14 @@ pub struct Check {
     pub fix: Option<String>,
 }
 
+/// The GPU's wave widths (`WaveLaneCountMin` / `WaveLaneCountMax`), kept in `report.json` next to
+/// the checks: which form the console's 64-lane programs got, without the console output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WaveLanes {
+    pub min: u32,
+    pub max: u32,
+}
+
 /// The GPU the game gets, as D3D12 reports it.
 #[derive(Debug, Clone, Default)]
 pub struct Gpu {
@@ -48,6 +56,15 @@ pub struct Found {
     pub dxc_toolchain: crate::gpu::recomp::dxc::Toolchain,
     pub xgameruntime: bool,
     pub gpu: Result<Gpu, String>,
+}
+
+impl Found {
+    /// None without a device, or when the driver gave no range (0)
+    pub fn wave_lanes(&self) -> Option<WaveLanes> {
+        let g = self.gpu.as_ref().ok().filter(|g| g.wave_max > 0)?;
+        let (min, max) = (g.wave_min, g.wave_max);
+        Some(WaveLanes { min, max })
+    }
 }
 
 fn check(level: Level, what: impl Into<String>, fix: Option<&str>) -> Check {
@@ -153,15 +170,15 @@ fn xgameruntime_present() -> bool {
     std::path::Path::new(&root).join("System32").join("xgameruntime.dll").is_file()
 }
 
-/// Check this PC for a run with the adapter `setting`.
-pub fn run(setting: &str) -> Vec<Check> {
+/// Check this PC for a run with the adapter `setting`: the checks, and the GPU's wave widths.
+pub fn run(setting: &str) -> (Vec<Check>, Option<WaveLanes>) {
     let found = Found {
         dxc: crate::gpu::recomp::dxc::location().map(|p| p.display().to_string()),
         dxc_toolchain: crate::gpu::recomp::dxc::toolchain(),
         xgameruntime: xgameruntime_present(),
         gpu: probe_gpu(setting),
     };
-    checks(&found)
+    (checks(&found), found.wave_lanes())
 }
 
 /// The checks as console lines: OK ones first as `  label`, the rest as WARNING / ERROR with
@@ -230,6 +247,22 @@ mod tests {
         // 64 in range: nothing; 8–16 (neither size): an error
         assert_eq!(levels(&found(Gpu { wave_min: 64, wave_max: 64, ..gpu() })), [Level::Ok, Level::Ok]);
         assert_eq!(levels(&found(Gpu { wave_min: 8, wave_max: 16, ..gpu() }))[1], Level::Error);
+    }
+
+    #[test]
+    fn the_wave_range_is_kept_for_the_report() {
+        let mut g = gpu();
+        (g.wave_min, g.wave_max) = (8, 16);
+        let lanes = found(g.clone()).wave_lanes();
+        assert_eq!(lanes, Some(WaveLanes { min: 8, max: 16 }));
+        let json = serde_json::to_string(&lanes).unwrap();
+        assert_eq!(json, r#"{"min":8,"max":16}"#);
+        // no range from the driver, no device: nothing
+        (g.wave_min, g.wave_max) = (0, 0);
+        assert_eq!(found(g).wave_lanes(), None);
+        let mut no_device = found(gpu());
+        no_device.gpu = Err("DXGI: E_FAIL".into());
+        assert_eq!(no_device.wave_lanes(), None);
     }
 
     #[test]

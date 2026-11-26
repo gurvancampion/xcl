@@ -50,6 +50,9 @@ pub struct Report {
     /// what the PC has of what a run needs (DXC, GPU features), checked by `xcl run` first
     #[serde(default)]
     pub environment: Vec<crate::preflight::Check>,
+    /// the GPU's wave widths from the same checks (`{"min":32,"max":32}`); null without a device
+    #[serde(default)]
+    pub wave_lanes: Option<crate::preflight::WaveLanes>,
     /// counts of static imports by how they were resolved
     pub imports_by_source: BTreeMap<String, usize>,
     /// imports that ended up as auto-stubs (static analysis)
@@ -135,6 +138,7 @@ pub fn build() -> Report {
         crash: CRASH.lock().ok().and_then(|g| g.clone()),
         exit_code: None,
         environment: Vec::new(),
+        wave_lanes: None,
         imports_by_source: by_source,
         stubbed_imports: stubbed,
         called_stubs: called,
@@ -211,5 +215,24 @@ mod tests {
         writer.join().unwrap();
         assert_eq!(CRASH.lock().unwrap().as_deref(), Some("boom"));
         *CRASH.lock().unwrap() = None;
+    }
+
+    #[test]
+    fn the_wave_range_round_trips_and_older_reports_still_load() {
+        let lanes = crate::preflight::WaveLanes { min: 32, max: 32 };
+        let r = Report {
+            wave_lanes: Some(lanes),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        let field = r#""wave_lanes":{"min":32,"max":32}"#;
+        assert!(json.contains(field), "{json}");
+        let back: Report = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.wave_lanes, Some(lanes));
+        // a report written before the field
+        let mut v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        v.as_object_mut().unwrap().remove("wave_lanes");
+        let old: Report = serde_json::from_value(v).unwrap();
+        assert_eq!(old.wave_lanes, None);
     }
 }

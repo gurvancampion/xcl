@@ -368,7 +368,7 @@ pub fn run(target: &Path, args: &[String]) -> i32 {
         Some(c) => println!("  console: imports {}", c.join(", ")),
         None => println!("  WARNING: this is not a valid x64 PE file (encrypted? from an XVC package?)"),
     }
-    let environment = crate::preflight::run(&boot.config.d3d12_adapter);
+    let (environment, wave_lanes) = crate::preflight::run(&boot.config.d3d12_adapter);
     crate::preflight::print(&environment);
 
     // the console's CPU is a Zen 2: its titles are compiled for it and fault with an illegal
@@ -395,7 +395,7 @@ pub fn run(target: &Path, args: &[String]) -> i32 {
             return 2;
         }
     };
-    summarize(&boot, code, &environment);
+    summarize(&boot, code, &environment, wave_lanes);
     code as i32
 }
 
@@ -487,12 +487,18 @@ fn spawn_host(cmdline: &str, cwd: &Path, boot_path: &Path) -> Result<u32, String
     }
 }
 
-fn summarize(boot: &Boot, code: u32, environment: &[crate::preflight::Check]) {
+fn summarize(
+    boot: &Boot,
+    code: u32,
+    environment: &[crate::preflight::Check],
+    wave_lanes: Option<crate::preflight::WaveLanes>,
+) {
     let path = boot.report_path();
     let mut report = crate::report::load(&path);
     if let Some(r) = report.as_mut() {
         r.exit_code = Some(code as i64);
         r.environment = environment.to_vec();
+        r.wave_lanes = wave_lanes;
         if r.dxc.dir.is_empty() {
             // the game compiled nothing: the DXC the checks above found for it
             r.dxc = crate::gpu::recomp::dxc::toolchain();
